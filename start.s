@@ -38,3 +38,62 @@ system_call:
     add     esp, 4          ; Restore caller state
     pop     ebp             ; Restore caller state
     ret                     ; Back to caller
+
+
+
+
+
+
+
+;main
+section .data
+    msg_endline db 10  ; newline character '\n'
+    msg_endline_len equ $ - msg_endline
+
+section .text
+global _start
+extern write
+extern exit
+extern strlen
+
+_start:
+    ; Initialize loop counter
+    mov esi, 1  ; start with argv[1]
+
+print_args_loop:
+    ; Load address of current argument (argv[esi]) into edi
+    mov edi, [esp + esi * 4]  ; argv[esi]
+
+    ; Calculate length of current argument using strlen (from util.c)
+    push edi  ; push argument address as parameter to strlen
+    call strlen
+    add esp, 4  ; adjust stack after function call, pop argument address
+
+    ; Store length of current argument in ebx (it's the return value of strlen)
+    mov ebx, eax  ; eax holds the return value (length)
+
+    ; Prepare parameters for write syscall
+    mov eax, 4  ; syscall number for write
+    mov edx, ebx  ; length of string to write
+    lea ecx, [edi]  ; pointer to the string (current argument)
+
+    ; Perform write syscall (write to stdout)
+    int 0x80
+
+    ; Write a newline after each argument
+    mov eax, 4
+    mov ebx, 1  ; file descriptor 1 (stdout)
+    mov ecx, msg_endline  ; address of newline character
+    mov edx, msg_endline_len  ; length of newline character
+    int 0x80
+
+    ; Increment loop counter and check for end of arguments (argc)
+    inc esi  ; move to next argument
+    cmp esi, [esp]  ; compare esi with argc (argv[0] holds argc)
+    jle print_args_loop  ; jump back to loop if not end of arguments
+
+exit_program:
+    ; Exit program normally
+    mov eax, 1  ; syscall number for exit
+    xor ebx, ebx  ; return status 0
+    int 0x80
