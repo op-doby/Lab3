@@ -1,47 +1,46 @@
-; Declare global variables
-global Infile ; Declare global variable Infile
-global Outfile ; Declare global variable Outfile
+global Infile ; Declare global variable 
+global Outfile ; Declare global variable 
 
-section .data ; initialize static/global variables               
+section .data                   ; Initialize static/global variables               
     Infile dd 0                 ; 0 is the standard input
     Outfile dd 1                ; 1 is the standard output
-    consoleOut: equ 2           ; File descriptor for console(stderr), const  
-    lineChar db 0x0A   
-    buff db 1
-    extern strlen
+    consoleOut: equ 2           ; Defines a constant consoleOut with a value of 2 (stdrr)
+    newLineChar db 0x0A         ; Newline character
+    buff db 1                   ; Defines a byte-sized buffer
+    extern strlen               ; From util.c
      
 
 section .text
-    global _start
+global _start
 
-_start:
-    call main
+_start:                         ; Defines the start of the program
+    call main                   
     call encoder
     jmp exitAll
 
 main:
-    push ebp                ;use ebp as a reference point for local variables of the current function.
-    mov ebp, esp
-    mov edi, [ebp+12]        
-    mov esi, 0              ;counter
+    push ebp                    ; Saves the base pointer
+    mov ebp, esp                ; Move the stack pointer to ebp
+    mov edi, [ebp+12]           
+    mov esi, 0                  ; Initializes a counter esi to 0
 
       
-    mainLoop:
-        mov ecx, [ebp + 8]     ;save argc
-        cmp esi, ecx           ;condition - check if there are more arguments
-        jne continueLoop
-        mov eax, 0 
-        pop ebp
-        ret
+    mainLoop:                  ; Loop for processing arguments
+        mov ecx, [ebp + 8]     ; argc
+        cmp esi, ecx           ; Compare between the number of the arguments and the counter
+        jne continueLoop       ; If the esi register is not equal to argc - go to continueLoop
+        mov eax, 0             ; Successful 
+        pop ebp                ; Clean up the stack before returning from a function
+        ret                    ; Transfers control back to the calling function
 
     continueLoop:
-        mov edx, edi
+        mov edx, edi           ; edi contains a pointer to the current argument being processed
         cmp byte[edx], '-'
-        jne print
+        jne print               
 
-        inc edx                 ;edx store the pointer to a string of characters, so increment it will skip the "-".
-        cmp byte[edx], 'o'
-        je oFunc
+        inc edx                 ; Skip '-'
+        cmp byte[edx], 'o'      
+        je oFunc                
         jne checkIfInput
 
 
@@ -50,20 +49,20 @@ main:
         je iFunc
 
     oFunc:
-        inc edx                ;skip the "o".
-        mov ebx, edx           ;move the file name.
-        mov eax, 5              ;open sys call
-        mov ecx, 0x41
-        mov edx, 0777
-        int 0x80                ;execute the sys call that in eax.
-        mov [Outfile], eax      ;save the file descriptor from OPEN to Outfile
+        inc edx                 ; Skip 'o'
+        mov ebx, edx            ; Move the pointer to the file name to ebx
+        mov eax, 5              ; Load the syscall number for open into eax
+        mov ecx, 0x41           ; Set the flags for the open syscall
+        mov edx, 0777           ; Set file permissions 
+        int 0x80                ; Execute the sys call with the parameters set in 'eax', 'ebx', 'ecx', 'edx'
+        mov [Outfile], eax      ; Store the file descriptor (returned in eax) into the Outfile 
         jmp print
 
     iFunc:
-        inc edx                 ;skip the "i". 
-        mov ebx, edx            ;move the file name.
-        mov eax, 5              ;open sys call
-        mov ecx, 0              ;file is open for reading
+        inc edx                 ; Skip 'i' 
+        mov ebx, edx            
+        mov eax, 5              
+        mov ecx, 0              ; File is open for reading
         mov edx, 0777
         int 0x80
         mov [Infile], eax
@@ -71,8 +70,8 @@ main:
 
 
 
-     print:
-        mov ebx, consoleOut    ;make pointer to the console
+     print:                     ;;;;;;; stopped hereeeee
+        mov ebx, consoleOut     ;make pointer to the console
         push edi                ;for saving it
         call strlen             ;strlen - the return value is in eax
         mov edx, eax
@@ -82,7 +81,7 @@ main:
         pop edi 
         mov ebx, consoleOut
         mov edx, 1              ;len of new line char
-        mov ecx, lineChar      
+        mov ecx, newLineChar      
         mov eax, 4
         int 0x80
         ;calculate next arg
@@ -132,7 +131,7 @@ exitAll:
     ;new line char and then exit 
     mov ebx, consoleOut
     mov edx, 1              
-    mov ecx, lineChar      
+    mov ecx, newLineChar      
     mov eax, 4
     int 0x80
     mov eax, 1              ;exit sys call
