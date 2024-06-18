@@ -1,99 +1,168 @@
-section .text
-global _start
-global system_call
-extern main
-_start:
-    pop    dword ecx    ; ecx = argc
-    mov    esi,esp      ; esi = argv
-    ;; lea eax, [esi+4*ecx+4] ; eax = envp = (4*ecx)+esi+4
-    mov     eax,ecx     ; put the number of arguments into eax
-    shl     eax,2       ; compute the size of argv in bytes
-    add     eax,esi     ; add the size to the address of argv 
-    add     eax,4       ; skip NULL at the end of argv
-    push    dword eax   ; char *envp[]
-    push    dword esi   ; char* argv[]
-    push    dword ecx   ; int argc
+global Infile 
+global Outfile 
 
-    call    main        ; int main( int argc, char *argv[], char *envp[] )
-
-    mov     ebx,eax
-    mov     eax,1
-    int     0x80
-    nop
-        
-system_call:
-    push    ebp             ; Save caller state
-    mov     ebp, esp
-    sub     esp, 4          ; Leave space for local var on stack
-    pushad                  ; Save some more caller state
-
-    mov     eax, [ebp+8]    ; Copy function args to registers: leftmost...        
-    mov     ebx, [ebp+12]   ; Next argument...
-    mov     ecx, [ebp+16]   ; Next argument...
-    mov     edx, [ebp+20]   ; Next argument...
-    int     0x80            ; Transfer control to operating system
-    mov     [ebp-4], eax    ; Save returned value...
-    popad                   ; Restore caller state (registers)
-    mov     eax, [ebp-4]    ; place returned value where caller can see it
-    add     esp, 4          ; Restore caller state
-    pop     ebp             ; Restore caller state
-    ret                     ; Back to caller
-
-
-
-
-
-
-
-;main
-section .data
-    msg_endline db 10  ; newline character '\n'
-    msg_endline_len equ $ - msg_endline
+section .data                   ; Initialize static/global variables               
+    Infile dd 0                 ; 0 is the standard input
+    Outfile dd 1                ; 1 is the standard output
+    buff db 1                   ; Defines a byte-sized buffer
+    newLineChar db 0x0A         ; Newline character (ASCII value)
+    stderr: equ 2               ; Defines a constant stderr with a value of 2 (stdrr)
+    extern strlen               ; From util.c
+    error_msg db 'Error opening file', 0x0A, 0  ; Error message with newline and null terminator
+     
 
 section .text
 global _start
-extern write
-extern exit
-extern strlen
 
-_start:
-    ; Initialize loop counter
-    mov esi, 1  ; start with argv[1]
+_start:                         ; Defines the start of the program
+    call main                   
+    call encoder
+    jmp exit
 
-print_args_loop:
-    ; Load address of current argument (argv[esi]) into edi
-    mov edi, [esp + esi * 4]  ; argv[esi]
+main:
+    push ebp                    ; Saves the base pointer
+    mov ebp, esp                ; Move the stack pointer to ebp
+    mov edi, [ebp+12]           
+    mov esi, 0                  ; Initializes a counter esi to 0
+      
+    processArguments:          ; Loop for processing arguments
+        mov ecx, [ebp + 8]     ; argc
+        cmp esi, ecx           ; Compare between the number of the arguments and the counter
+        jne InputOutputSupport       ; If the esi register is not equal to argc - go to InputOutputSupport
+        mov eax, 0             ; Successful 
+        pop ebp                ; Clean up the stack before returning from a function
+        ret                    ; Transfers control back to the calling function
 
-    ; Calculate length of current argument using strlen (from util.c)
-    push edi  ; push argument address as parameter to strlen
-    call strlen
-    add esp, 4  ; adjust stack after function call, pop argument address
 
-    ; Store length of current argument in ebx (it's the return value of strlen)
-    mov ebx, eax  ; eax holds the return value (length)
+    InputOutputSupport:
+        mov edx, edi           ; edi contains a pointer to the current argument being processed
+        cmp byte[edx], '-'
+        jne print               
 
-    ; Prepare parameters for write syscall
-    mov eax, 4  ; syscall number for write
-    mov edx, ebx  ; length of string to write
-    lea ecx, [edi]  ; pointer to the string (current argument)
+        inc edx                 ; Skip '-'
+        cmp byte[edx], 'o'      
+        je getOutput  
+        cmp byte[edx], 'i'      ; Check for '-i' option
+        je getInput             ; Jump to getInput if 'i'
+        jmp print   
+        ;jne checkIfInput
 
-    ; Perform write syscall (write to stdout)
+
+    ;checkIfInput:
+    ;    cmp byte[edx], 'i'
+    ;    je getInput
+
+getInput:
+    inc edx                 ; Skip 'i' 
+    mov ebx, edx            
+    mov eax, 5            
+    mov ecx, 0              ; File is open for reading
+    mov edx, 0644o
     int 0x80
+    cmp eax, 0              ; If eax < 0 exit the program
+    jl _error 
+    mov [Infile], eax
+    jmp print
 
-    ; Write a newline after each argument
+
+    getOutput:
+    inc edx                 ; Skip 'o'
+    mov ebx, edx            ; Move the pointer to the file name to ebx
+    mov eax, 5              ; Load the syscall number for open into eax
+    mov ecx, 0x41           ; Set the flags for the open syscall
+    mov edx, 0644o           ; Set file permissions 
+    int 0x80                ; Execute the sys call with the parameters set in 'eax', 'ebx', 'ecx', 'edx'
+    mov [Outfile], eax      ; Store the file descriptor (returned in eax) into the Outfile 
+    jmp print
+
+
+    print:                     
+    mov ebx, stderr         ; Setting ebx as the file descriptor for standard error
+    push edi                    ; Pushing the curreent string argument to the stack
+    call strlen                 ; Calculates the length of the string (that edi points on) and stores it in eax
+    mov edx, eax                ; edx will hold the count of bytes to write
+    mov ecx, edi                ; ecx will hold the address of the buffer to write
+    mov eax, 4                  ; sys_write
+    int 0x80                    ; Execute the sys call that in eax
+    pop edi                 
+    mov ebx, stderr
+    mov edx, 1                  ; Len of newline character
+    mov ecx, newLineChar    
+    mov eax, 4                  ; sys_write
+    int 0x80                    ; Execute the sys call that in eax
+    mov edi, [ebp+4*esi + 16]   ; Calculate next argument and move the pointer into the edi register
+    inc esi                     ; Moving to the next argument
+    jmp processArguments
+    ;jmp main
+
+
+encoder:
+    encode:
+        mov eax, 3                 ; sys_read 
+        mov ebx, [Infile]          ; Store the file descriptor of the input file into ebx
+        mov ecx, buff              
+        mov edx, 1                 ; 1 byte to read each time
+        int 0x80                   
+        cmp eax, 0                 
+        jne checkRange             ; If the value in eax is not 0 (we read a byte), jump to checkRange
+
+    ; If eax is 0 close the file                                    
+        mov eax, 6                 ; sys_close 
+        mov ebx, [Infile]          
+        int 0x80                   
+        mov eax, 6                
+        mov ebx, [Outfile]        
+        int 0x80                   
+        jmp exit                
+
+    checkRange:
+        cmp byte [buff], 'A'       
+        jl write               ; If the byte in buff is less than 'A', jump to write (no encoding needed)
+        cmp byte [buff], 'z'       
+        jg write               ; If the byte in buff is greater than 'z', jump to write 
+        add byte [buff], 1     ; Else - increment the byte in buff by 1 (encoding)
+
+    write:
+        mov eax, 4                 ; sys_write 
+        mov ebx, [Outfile]       
+        mov ecx, buff              
+        mov edx, 1                 ; Number of bytes to write (1) into the edx register
+        int 0x80                
+        jmp encode           ; Jump back to encode to read and process the next byte
+
+
+_error:
+  _error:
+    ; Print the error message
+    mov eax, 4              ; Syscall number for sys_write
+    mov ebx, stderr         ; File descriptor 2 (stderr)
+    mov ecx, error_msg      ; Pointer to the error message
+    mov edx, 18             ; Length of the error message (including newline)
+    int 0x80                ; Invoke syscall to print the error message
+    
+    ; Print a newline character
+    mov eax, 4              ; Syscall number for sys_write
+    mov ebx, stderr         ; File descriptor 2 (stderr)
+    mov ecx, newLineChar    ; Pointer to the newline character
+    mov edx, 1              ; Length of the newline character (1 byte)
+    int 0x80                ; Invoke syscall to print the newline character
+
+    ; Exit the program with an error code
+    mov eax, 1              ; Syscall number for exit
+    mov ebx, 1              ; Exit code 1 (or appropriate error code)
+    int 0x80                ; Invoke syscall to exit
+
+exit:
+    mov ebx, stderr             ; sterr
+    mov edx, 1              
+    mov ecx, newLineChar      
     mov eax, 4
-    mov ebx, 1  ; file descriptor 1 (stdout)
-    mov ecx, msg_endline  ; address of newline character
-    mov edx, msg_endline_len  ; length of newline character
+    int 0x80
+    mov eax, 1                  ; Exit sys call
+    xor ebx, ebx
     int 0x80
 
-    ; Increment loop counter and check for end of arguments (argc)
-    inc esi  ; move to next argument
-    cmp esi, [esp]  ; compare esi with argc (argv[0] holds argc)
-    jle print_args_loop  ; jump back to loop if not end of arguments
 
-exit_program:
-    ; Exit program normally
-    mov eax, 1  ; syscall number for exit
-    xor ebx, ebx  ; return status 0
-    int 0x80
+
+
+

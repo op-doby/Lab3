@@ -8,16 +8,11 @@
 #define SEEK_SET 0
 #define SHIRA_OFFSET 0x291
 
-extern int system_call();
+extern void _start();
 
 int main (int argc , char* argv[], char* envp[])
 {
-    int i;
-    for (i = 0; i < argc; i++) {
-        char *arg = argv[i];
-        system_call(SYS_WRITE, STDOUT, (int)arg, strlen(arg));
-        system_call(SYS_WRITE, STDOUT, (int)"\n", 1);
-    }
+  _start();
   return 0;
 }
 
